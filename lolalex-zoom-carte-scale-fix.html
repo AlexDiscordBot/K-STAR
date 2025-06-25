@@ -1,0 +1,823 @@
+<!DOCTYPE html>
+<html lang="fr">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LoL SafeZone Trainer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            overflow-x: hidden;
+        }
+
+        .champion-slot.empty:hover {
+            transform: scale(1.05);
+            border-color: #facc15;
+        }
+
+        .champion-grid-item:hover {
+            transform: scale(1.08);
+            border-color: #3b82f6;
+        }
+
+        #simulationCanvas {
+            cursor: grab;
+            display: block;
+        }
+
+        #simulationCanvas:active {
+            cursor: grabbing;
+        }
+
+        .spell-range-circle {
+            position: absolute;
+            border-radius: 50%;
+            background-color: rgba(239, 68, 68, 0.2);
+            border: 1px dashed rgba(239, 68, 68, 0.7);
+            pointer-events: none;
+            transform: translate(-50%, -50%);
+        }
+
+        #spell-details-tooltip {
+            position: fixed;
+            z-index: 100;
+        }
+
+
+
+       #spell-summary {
+        max-height: 500px;
+        overflow-y: auto;
+    }
+    
+    .champion-spells {
+        scroll-margin: 1rem;
+    }
+    
+    .spell-item {
+        transition: all 0.2s ease;
+    }
+    
+    .spell-item:hover {
+        transform: translateX(2px);
+        border-left: 2px solid #facc15;
+    }
+    
+    /* Style pour la barre de défilement */
+    #spell-summary::-webkit-scrollbar {
+        width: 6px;
+    }
+    
+    #spell-summary::-webkit-scrollbar-track {
+        background: #1F2937;
+    }
+    
+    #spell-summary::-webkit-scrollbar-thumb {
+        background: #facc15;
+        border-radius: 3px;
+    }
+    </style>
+</head>
+
+<body class="bg-gray-900 text-gray-200">
+
+    <div id="loading-overlay"
+        class="fixed inset-0 bg-gray-900 bg-opacity-90 flex flex-col justify-center items-center z-50">
+        <svg class="animate-spin h-12 w-12 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none"
+            viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor"
+                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z">
+            </path>
+        </svg>
+        <p id="loading-text" class="mt-4 text-lg">Chargement des données de League of Legends...</p>
+    </div>
+
+    <div id="app-content" class="container mx-auto p-4 md:p-8 hidden">
+        <header class="text-center mb-8">
+            <h1 class="text-4xl md:text-5xl font-bold text-yellow-400">LoL SafeZone Trainer</h1>
+            <p class="text-gray-400 mt-2">Visualisez les menaces et maîtrisez votre positionnement.</p>
+        </header>
+
+        <!-- Section de sélection des champions -->
+        <section class="mb-8 p-6 bg-gray-800 rounded-lg shadow-xl">
+            <h2 class="text-2xl font-semibold mb-4 text-center">1. Composez les équipes</h2>
+            <div class="flex flex-col md:flex-row justify-center items-center gap-8">
+                <!-- Équipe Ennemie -->
+                <div class="flex-1 w-full">
+                    <h3 class="text-xl text-red-500 font-bold mb-4 text-center">ÉQUIPE ENNEMIE</h3>
+                    <div id="enemy-team-slots" class="grid grid-cols-5 gap-2 md:gap-4">
+                        <!-- Les slots seront générés par JS -->
+                    </div>
+                </div>
+                <!-- Votre Champion -->
+                <div class="flex-shrink-0 w-full md:w-auto">
+                    <h3 class="text-xl text-blue-500 font-bold mb-4 text-center">VOTRE CHAMPION</h3>
+                    <div id="player-champion-slot" class="grid grid-cols-1 gap-4">
+                        <!-- Le slot sera généré par JS -->
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Section de la simulation -->
+        <section class="p-6 bg-gray-800 rounded-lg shadow-xl">
+            <h2 class="text-2xl font-semibold mb-4 text-center">2. Simulation et Positionnement</h2>
+            <p class="text-center text-gray-400 mb-4">Cliquez et déplacez les champions sur la carte pour voir les zones
+                de danger en temps réel.</p>
+            <div id="simulation-container"
+                class="relative w-full aspect-video rounded-lg overflow-hidden border-2 border-gray-700">
+                <canvas id="simulationCanvas"></canvas>
+            </div>
+            <div id="spell-details-tooltip"
+                class="absolute hidden bg-gray-900 border border-yellow-400 rounded-lg p-4 max-w-xs z-30 text-sm">
+                <!-- Contenu du tooltip généré par JS -->
+            </div>
+            <div id="spell-summary" class="hidden mt-4 bg-gray-800 border border-yellow-400 rounded-lg p-4">
+                <h3 class="text-yellow-400 text-xl font-bold mb-3">Récapitulatif des sorts</h3>
+                <div id="spell-summary-content" class="space-y-4"></div>
+            </div>
+        </section>
+    </div>
+
+    <!-- Modal de sélection de champion -->
+    <div id="champion-select-modal"
+        class="fixed inset-0 bg-gray-900 bg-opacity-80 flex justify-center items-center z-40 hidden p-4">
+        <div class="bg-gray-800 rounded-xl shadow-2xl w-full max-w-4xl h-[90vh] flex flex-col">
+            <div class="p-4 border-b border-gray-700 flex justify-between items-center">
+                <h3 class="text-xl font-bold text-yellow-400">Choisissez un champion</h3>
+                <input type="text" id="champion-search-input" placeholder="Rechercher un champion..."
+                    class="bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-yellow-400">
+                <button id="close-modal-btn" class="text-gray-400 hover:text-white">&times;</button>
+            </div>
+            <div id="champion-grid"
+                class="p-4 grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 lg:grid-cols-10 gap-4 overflow-y-auto">
+                <!-- Grille des champions générée par JS -->
+            </div>
+        </div>
+    </div>
+
+
+    <script type="module">
+        // --- CONSTANTES ET VARIABLES D'ÉTAT ---
+        const API_BASE_URL = "https://ddragon.leagueoflegends.com";
+        const loadingOverlay = document.getElementById('loading-overlay');
+        const loadingText = document.getElementById('loading-text');
+        const appContent = document.getElementById('app-content');
+
+        const enemySlotsContainer = document.getElementById('enemy-team-slots');
+        const playerSlotContainer = document.getElementById('player-champion-slot');
+        const modal = document.getElementById('champion-select-modal');
+        const closeModalBtn = document.getElementById('close-modal-btn');
+        const championGrid = document.getElementById('champion-grid');
+        const searchInput = document.getElementById('champion-search-input');
+
+        const canvas = document.getElementById('simulationCanvas');
+        const ctx = canvas.getContext('2d');
+        const simContainer = document.getElementById('simulation-container');
+        const spellTooltip = document.getElementById('spell-details-tooltip');
+
+        let latestVersion = "";
+        let allChampions = {};
+        let selectedSlot = { type: null, index: -1 }; // type: 'enemy' or 'player'
+
+        let state = {
+            enemies: [null, null, null, null, null],
+            player: null,
+            positions: { enemies: [{}, {}, {}, {}, {}], player: {} },
+            championData: { enemies: [null, null, null, null, null], player: null }
+        };
+
+        let draggedChampion = null;
+        let championImages = {};
+
+        const CHAMPION_ICON_SIZE = 40; // Taille de base plus grande
+        const MAP_WIDTH_UNITS = 30000;
+        const MAP_HEIGHT_UNITS = 30000; // Ajouté pour la proportion
+
+        function scaleRange(rangeInUnits) {
+            // Facteur d'échelle basé sur la largeur de la carte (Summoner's Rift fait environ 14800 unités de large)
+            const mapWidthUnits = 14800; // Largeur approximative de Summoner's Rift
+            const scaleFactor = canvas.width / mapWidthUnits;
+
+            // Ajustement supplémentaire pour que les ranges paraissent naturelles
+            return rangeInUnits * scaleFactor * 0.8;
+        }
+
+
+        // Ajoutez ces variables pour la gestion de la carte
+        let mapImage = new Image();
+        mapImage.src = 'https://cdn.discordapp.com/attachments/1371025127906738276/1387301683066961992/Z.png?ex=685cd8e0&is=685b8760&hm=0e8b1df44eca79f132044bdf045ef9f3af104b1e657c290dff911440ca688d0b&';
+
+        // Configuration initiale de la caméra
+        const camera = {
+            zoom: 1,
+            offsetX: 0,
+            offsetY: 0,
+            minZoom: 0.5,
+            maxZoom: 3
+        };
+
+        // --- LOGIQUE DE L'APPLICATION ---
+
+        /**
+         * Initialise l'application : récupère les données et configure l'UI
+         */
+        async function initialize() {
+            try {
+                // 1. Obtenir la dernière version du jeu
+                loadingText.textContent = "Récupération de la dernière version du jeu...";
+                const versionsRes = await fetch(`${API_BASE_URL}/api/versions.json`);
+                const versions = await versionsRes.json();
+                latestVersion = versions[0];
+                console.log(`Version de LoL détectée : ${latestVersion}`);
+
+                // 2. Obtenir la liste de tous les champions
+                loadingText.textContent = `Chargement des champions pour la version ${latestVersion}...`;
+                const championsRes = await fetch(`${API_BASE_URL}/cdn/${latestVersion}/data/fr_FR/champion.json`);
+                const championsData = await championsRes.json();
+                allChampions = championsData.data;
+
+                // 3. Pré-charger les images des champions
+                preloadChampionImages();
+
+                // 4. Mettre en place l'UI
+                setupUI();
+                setupCanvas();
+
+                // 5. Afficher le contenu
+                loadingOverlay.classList.add('hidden');
+                appContent.classList.remove('hidden');
+
+            } catch (error) {
+                console.error("Erreur d'initialisation:", error);
+                loadingText.textContent = "Impossible de charger les données. Veuillez rafraîchir la page.";
+            }
+        }
+
+        /**
+         * Met en place les éléments de l'interface utilisateur
+         */
+        function setupUI() {
+            // Créer les slots de sélection
+            for (let i = 0; i < 5; i++) {
+                enemySlotsContainer.appendChild(createChampionSlot('enemy', i));
+            }
+            playerSlotContainer.appendChild(createChampionSlot('player', 0));
+
+            // Créer la grille de champions dans le modal
+            const sortedChampions = Object.values(allChampions).sort((a, b) => a.name.localeCompare(b.name));
+            sortedChampions.forEach(champ => {
+                championGrid.appendChild(createChampionGridItem(champ));
+            });
+
+            // Écouteurs d'événements
+            closeModalBtn.addEventListener('click', () => modal.classList.add('hidden'));
+            searchInput.addEventListener('input', handleChampionSearch);
+        }
+
+        /**
+         * Crée un emplacement (slot) pour sélectionner un champion
+         */
+        function createChampionSlot(type, index) {
+            const slot = document.createElement('div');
+            slot.className = 'champion-slot empty w-16 h-16 md:w-20 md:h-20 bg-gray-700 rounded-lg flex justify-center items-center cursor-pointer border-2 border-dashed border-gray-500 transition-all duration-200';
+            slot.dataset.type = type;
+            slot.dataset.index = index;
+            slot.innerHTML = `<span class="text-3xl text-gray-500">+</span>`;
+            slot.addEventListener('click', () => {
+                selectedSlot = { type, index };
+                modal.classList.remove('hidden');
+                searchInput.value = '';
+                handleChampionSearch(); // Reset search
+                searchInput.focus();
+            });
+            return slot;
+        }
+
+        /**
+         * Crée un élément dans la grille de sélection de champion
+         */
+        function createChampionGridItem(champ) {
+            const item = document.createElement('div');
+            item.className = 'champion-grid-item flex flex-col items-center cursor-pointer p-1 rounded-md transition-all duration-200 border-2 border-transparent';
+            item.dataset.championId = champ.id;
+
+            const imgUrl = `${API_BASE_URL}/cdn/${latestVersion}/img/champion/${champ.image.full}`;
+            item.innerHTML = `
+                <img src="${imgUrl}" alt="${champ.name}" class="w-16 h-16 rounded-md">
+                <span class="text-xs mt-1 text-center">${champ.name}</span>
+            `;
+            item.addEventListener('click', () => handleChampionSelection(champ.id));
+            return item;
+        }
+
+        /**
+         * Gère la recherche de champion dans le modal
+         */
+        function handleChampionSearch() {
+            const query = searchInput.value.toLowerCase();
+            const items = championGrid.getElementsByClassName('champion-grid-item');
+            for (let item of items) {
+                const champName = item.dataset.championId.toLowerCase();
+                if (champName.includes(query)) {
+                    item.style.display = 'flex';
+                } else {
+                    item.style.display = 'none';
+                }
+            }
+        }
+
+
+        /**
+         * Gère la sélection d'un champion depuis le modal
+         */
+        async function handleChampionSelection(championId) {
+            const { type, index } = selectedSlot;
+            const champion = allChampions[championId];
+
+            // Mettre à jour le slot visuellement
+            const slotElement = document.querySelector(`.champion-slot[data-type='${type}'][data-index='${index}']`);
+            const imgUrl = `${API_BASE_URL}/cdn/${latestVersion}/img/champion/${champion.image.full}`;
+            slotElement.innerHTML = `<img src="${imgUrl}" alt="${champion.name}" class="w-full h-full rounded-lg object-cover">`;
+            slotElement.classList.remove('empty');
+            slotElement.classList.remove('border-dashed');
+
+            // Mettre à jour l'état de l'application
+            if (type === 'enemy') {
+                state.enemies[index] = championId;
+            } else {
+                state.player = championId;
+            }
+
+            modal.classList.add('hidden');
+
+            // Charger les données détaillées du champion
+            await loadDetailedChampionData(championId, type, index);
+
+            // Placer le champion sur la carte
+            resetChampionPosition(type, index);
+
+            // Redessiner le canvas
+            draw();
+            updateSpellSummary(); // Ajoutez cette ligne à la fin
+
+        }
+
+        /**
+        * Charge les données détaillées d'un champion (sorts, etc.)
+        */
+        async function loadDetailedChampionData(championId, type, index) {
+            const res = await fetch(`${API_BASE_URL}/cdn/${latestVersion}/data/fr_FR/champion/${championId}.json`);
+            const data = await res.json();
+            const detailedData = data.data[championId];
+
+            if (type === 'enemy') {
+                state.championData.enemies[index] = detailedData;
+            } else {
+                state.championData.player = detailedData;
+            }
+            console.log(`Données chargées pour ${championId}:`, detailedData);
+            updateSpellSummary(); // Ajoutez cette ligne à la fin
+
+        }
+
+        /**
+         * Pré-charge les images des champions pour le canvas
+         */
+        function preloadChampionImages() {
+            Object.values(allChampions).forEach(champ => {
+                const img = new Image();
+                img.src = `${API_BASE_URL}/cdn/${latestVersion}/img/champion/${champ.image.full}`;
+                championImages[champ.id] = img;
+            });
+        }
+
+        /**
+         * Réinitialise la position d'un champion sur la carte
+         */
+        // Modifiez resetChampionPosition pour un meilleur placement initial
+        function resetChampionPosition(type, index) {
+            if (type === 'enemy') {
+                // Positionner les ennemis en demi-cercle en haut
+                const angle = (index / 4) * Math.PI;
+                const radius = Math.min(canvas.width, canvas.height) * 0.25;
+                state.positions.enemies[index] = {
+                    x: canvas.width / 2 + Math.cos(angle) * radius,
+                    y: canvas.height / 3 - Math.sin(angle) * radius * 0.5
+                };
+            } else {
+                // Positionner le joueur au centre bas
+                state.positions.player = {
+                    x: canvas.width / 2,
+                    y: canvas.height * 0.7
+                };
+            }
+        }
+
+        // --- LOGIQUE DU CANVAS ---
+
+        /**
+         * Configure le canvas et ses écouteurs d'événements
+         */
+        function setupCanvas() {
+            function resizeCanvas() {
+                const containerRect = simContainer.getBoundingClientRect();
+                canvas.width = containerRect.width;
+                canvas.height = containerRect.height;
+
+                // Réinitialiser les positions des champions après resize
+                if (state.player) resetChampionPosition('player', 0);
+                state.enemies.forEach((_, i) => resetChampionPosition('enemy', i));
+
+                draw();
+            }
+
+            mapImage.onload = function () {
+                // Ajuster le zoom initial pour que la carte tienne dans le conteneur
+                const containerRatio = canvas.width / canvas.height;
+                const mapRatio = mapImage.width / mapImage.height;
+
+                if (mapRatio > containerRatio) {
+                    camera.zoom = canvas.width / mapImage.width;
+                } else {
+                    camera.zoom = canvas.height / mapImage.height;
+                }
+
+                // Centrer la carte
+                camera.offsetX = (canvas.width - mapImage.width * camera.zoom) / 2;
+                camera.offsetY = (canvas.height - mapImage.height * camera.zoom) / 2;
+
+                draw();
+            };
+
+            window.addEventListener('resize', resizeCanvas);
+            resizeCanvas();
+
+            // Gestion du zoom
+            canvas.addEventListener('wheel', (e) => {
+                e.preventDefault();
+
+                const zoomIntensity = 0.1;
+                const wheelDelta = e.deltaY < 0 ? 1 : -1;
+                const zoomFactor = 1 + wheelDelta * zoomIntensity;
+
+                const oldZoom = camera.zoom;
+                camera.zoom = Math.min(camera.maxZoom, Math.max(camera.minZoom, camera.zoom * zoomFactor));
+
+                // Ajuster le offset pour zoomer vers la souris
+                const rect = canvas.getBoundingClientRect();
+                const mouseX = e.clientX - rect.left;
+                const mouseY = e.clientY - rect.top;
+
+                camera.offsetX = mouseX - (mouseX - camera.offsetX) * (camera.zoom / oldZoom);
+                camera.offsetY = mouseY - (mouseY - camera.offsetY) * (camera.zoom / oldZoom);
+
+                draw();
+            });
+
+            // Gestion du drag améliorée
+            let isDragging = false;
+            let lastX = 0;
+            let lastY = 0;
+
+            canvas.addEventListener('mousedown', (e) => {
+                const rect = canvas.getBoundingClientRect();
+                const mouseX = (e.clientX - rect.left - camera.offsetX) / camera.zoom;
+                const mouseY = (e.clientY - rect.top - camera.offsetY) / camera.zoom;
+
+                draggedChampion = findChampionAt(mouseX, mouseY);
+
+                if (draggedChampion) {
+                    canvas.style.cursor = 'grabbing';
+                } else {
+                    // Déplacer la carte
+                    isDragging = true;
+                    lastX = e.clientX;
+                    lastY = e.clientY;
+                    canvas.style.cursor = 'grabbing';
+                }
+            });
+
+
+            canvas.addEventListener('mousemove', (e) => {
+                if (draggedChampion) {
+                    const rect = canvas.getBoundingClientRect();
+                    const newX = (e.clientX - rect.left - camera.offsetX) / camera.zoom;
+                    const newY = (e.clientY - rect.top - camera.offsetY) / camera.zoom;
+
+                    if (draggedChampion.type === 'enemy') {
+                        state.positions.enemies[draggedChampion.index] = { x: newX, y: newY };
+                    } else {
+                        state.positions.player = { x: newX, y: newY };
+                    }
+                    draw();
+                } else if (isDragging) {
+                    const dx = e.clientX - lastX;
+                    const dy = e.clientY - lastY;
+
+                    camera.offsetX += dx;
+                    camera.offsetY += dy;
+
+                    lastX = e.clientX;
+                    lastY = e.clientY;
+                    draw();
+                } else {
+                    const rect = canvas.getBoundingClientRect();
+                    const mouseX = (e.clientX - rect.left - camera.offsetX) / camera.zoom;
+                    const mouseY = (e.clientY - rect.top - camera.offsetY) / camera.zoom;
+
+                    const champion = findChampionAt(mouseX, mouseY);
+                    canvas.style.cursor = champion ? 'grab' : 'default';
+                    handleSpellTooltip(e);
+                }
+            });
+
+
+            canvas.addEventListener('mouseup', () => {
+                draggedChampion = null;
+                isDragging = false;
+                canvas.style.cursor = 'default';
+            });
+
+            canvas.addEventListener('mouseleave', () => {
+                draggedChampion = null;
+                isDragging = false;
+                canvas.style.cursor = 'default';
+                spellTooltip.classList.add('hidden');
+            });
+        }
+
+        /**
+         * Trouve quel champion se trouve aux coordonnées données
+         */
+        function findChampionAt(x, y) {
+            // Taille effective avec zoom
+            const effectiveSize = CHAMPION_ICON_SIZE * camera.zoom;
+
+            // Vérifier le joueur
+            if (state.player) {
+                const pos = state.positions.player;
+                if (x >= pos.x - effectiveSize / 2 && x <= pos.x + effectiveSize / 2 &&
+                    y >= pos.y - effectiveSize / 2 && y <= pos.y + effectiveSize / 2) {
+                    return { type: 'player', index: 0, id: state.player };
+                }
+            }
+            // Vérifier les ennemis
+            for (let i = 0; i < state.enemies.length; i++) {
+                if (state.enemies[i]) {
+                    const pos = state.positions.enemies[i];
+                    if (x >= pos.x - effectiveSize / 2 && x <= pos.x + effectiveSize / 2 &&
+                        y >= pos.y - effectiveSize / 2 && y <= pos.y + effectiveSize / 2) {
+                        return { type: 'enemy', index: i, id: state.enemies[i] };
+                    }
+                }
+            }
+            return null;
+        }
+
+        /**
+         * Affiche le tooltip d'un sort si la souris est dessus
+         */
+        // Modifiez handleSpellTooltip pour ne pas interrompre le drag
+        function handleSpellTooltip(e) {
+            if (draggedChampion) {
+                spellTooltip.classList.add('hidden');
+                return;
+            }
+
+            const rect = canvas.getBoundingClientRect();
+            const mouseX = (e.clientX - rect.left - camera.offsetX) / camera.zoom;
+            const mouseY = (e.clientY - rect.top - camera.offsetY) / camera.zoom;
+
+            let spellFound = false;
+
+            for (let i = 0; i < state.championData.enemies.length; i++) {
+                const champData = state.championData.enemies[i];
+                if (!champData) continue;
+
+                const champPos = state.positions.enemies[i];
+                const champId = state.enemies[i];
+                if (!champId) continue;
+
+                for (const spell of champData.spells) {
+                    const range = Array.isArray(spell.range) ? Math.max(...spell.range) : spell.range;
+                    if (range > 0 && range < 5000) {
+                        const distance = Math.sqrt(Math.pow(mouseX - champPos.x, 2) + Math.pow(mouseY - champPos.y, 2));
+                        if (Math.abs(distance - scaleRange(range)) < 15 / camera.zoom) {
+                            spellTooltip.style.left = `${e.clientX + 15}px`;
+                            spellTooltip.style.top = `${e.clientY + 15}px`;
+
+                            const spellKey = spell.id.slice(-1);
+                            const cooldown = spell.cooldown.join(' / ');
+
+                            spellTooltip.innerHTML = `
+                       <div class="flex items-center mb-2">
+                           <img src="${API_BASE_URL}/cdn/${latestVersion}/img/spell/${spell.image.full}" class="w-8 h-8 rounded mr-3">
+                           <div>
+                               <p class="font-bold text-yellow-400">${spell.name} (${spellKey})</p>
+                               <p class="text-xs text-gray-400">${champData.name}</p>
+                           </div>
+                       </div>
+                       <p class="text-xs mb-2"><strong>Range:</strong> ${spell.range.join(' / ')}</p>
+                       <p class="text-xs mb-2"><strong>Cooldown:</strong> ${cooldown}s</p>
+                       <p class="text-xs text-gray-300">${spell.description}</p>
+                   `;
+                            spellTooltip.classList.remove('hidden');
+                            spellFound = true;
+                            break;
+                        }
+                    }
+                }
+                if (spellFound) break;
+            }
+
+            if (!spellFound) {
+                spellTooltip.classList.add('hidden');
+            }
+        }
+
+        // Modifiez la fonction draw pour bien afficher tous les sorts
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Dessiner la carte
+            if (mapImage.complete) {
+                ctx.save();
+                ctx.setTransform(camera.zoom, 0, 0, camera.zoom, camera.offsetX, camera.offsetY);
+                ctx.drawImage(mapImage, 0, 0);
+                ctx.restore();
+            }
+
+            // Dessiner les ranges des sorts
+            for (let i = 0; i < state.championData.enemies.length; i++) {
+                const champData = state.championData.enemies[i];
+                if (!champData || !state.enemies[i]) continue;
+
+                const pos = state.positions.enemies[i];
+                champData.spells.forEach(spell => {
+                    let range;
+                    if (Array.isArray(spell.range)) {
+                        // Gérer les sorts avec range variable
+                        range = Math.max(...spell.range.filter(r => typeof r === 'number' && r > 0));
+                    } else {
+                        range = spell.range === 'global' || spell.range === 'self' ? 0 : spell.range;
+                    }
+
+                    // Dessiner seulement si range valide et pas globale/self
+                    if (range && range > 0 && range < 20000) {
+                        const adjustedRange = scaleRange(range);
+                        const alpha = 0.1 + (0.3 * (i / state.championData.enemies.length));
+                        drawSpellRange(pos.x, pos.y, adjustedRange, 'red', alpha);
+                    }
+                });
+            }
+
+            // Dessiner les champions
+            if (state.player) {
+                drawChampion(state.player, state.positions.player.x, state.positions.player.y, 'blue');
+            }
+            state.enemies.forEach((champId, index) => {
+                if (champId) {
+                    const pos = state.positions.enemies[index];
+                    drawChampion(champId, pos.x, pos.y, 'red');
+                }
+            });
+        }
+
+
+        // Ajoutez cette fonction pour mettre à jour le récapitulatif
+       function updateSpellSummary() {
+    const summaryContainer = document.getElementById('spell-summary-content');
+    summaryContainer.innerHTML = '';
+    
+    const hasEnemies = state.enemies.some(e => e !== null);
+    document.getElementById('spell-summary').classList.toggle('hidden', !hasEnemies);
+    
+    if (!hasEnemies) return;
+
+    for (let i = 0; i < state.championData.enemies.length; i++) {
+        const champData = state.championData.enemies[i];
+        if (!champData || !state.enemies[i]) continue;
+
+        const champDiv = document.createElement('div');
+        champDiv.className = 'champion-spells bg-gray-700 p-3 rounded-lg';
+        
+        const champName = document.createElement('div');
+        champName.className = 'text-red-400 font-bold mb-2 flex items-center';
+        champName.innerHTML = `
+            <img src="${API_BASE_URL}/cdn/${latestVersion}/img/champion/${champData.image.full}" 
+                 class="w-8 h-8 rounded-full mr-2">
+            ${champData.name}
+        `;
+        champDiv.appendChild(champName);
+        
+        champData.spells.forEach((spell, idx) => {
+            const spellDiv = document.createElement('div');
+            spellDiv.className = 'spell-item bg-gray-900 p-2 rounded mb-2 last:mb-0';
+            
+            const spellKey = ['Q', 'W', 'E', 'R'][idx];
+            const cooldown = spell.cooldownBurn || spell.cooldown.join('/');
+            const cost = spell.costBurn || spell.cost.join('/');
+            
+            spellDiv.innerHTML = `
+                <div class="flex items-start">
+                    <img src="${API_BASE_URL}/cdn/${latestVersion}/img/spell/${spell.image.full}" 
+                         class="w-10 h-10 rounded mr-3">
+                    <div>
+                        <div class="font-bold text-yellow-400">${spellKey}: ${spell.name}</div>
+                        <div class="text-xs text-gray-400 mt-1">
+                            <span class="text-blue-300">Cooldown: ${cooldown}s</span> | 
+                            <span class="text-green-300">Coût: ${cost} ${champData.partype}</span>
+                        </div>
+                        <div class="text-xs text-gray-300 mt-1">${spell.description}</div>
+                    </div>
+                </div>
+            `;
+            
+            champDiv.appendChild(spellDiv);
+        });
+        
+        summaryContainer.appendChild(champDiv);
+    }
+}
+
+
+
+
+        /**
+         * Dessine une icône de champion sur le canvas
+         */
+        // Modifiez la fonction drawChampion pour qu'elle fonctionne avec le zoom
+        function drawChampion(championId, x, y, teamColor) {
+            const img = championImages[championId];
+            if (img && img.complete) {
+                ctx.save();
+
+                // Convertir en coordonnées écran
+                const screenX = x * camera.zoom + camera.offsetX;
+                const screenY = y * camera.zoom + camera.offsetY;
+                const size = CHAMPION_ICON_SIZE * camera.zoom;
+
+                // Dessiner le cercle de fond
+                ctx.beginPath();
+                ctx.arc(screenX, screenY, size / 2 + 4, 0, Math.PI * 2);
+                ctx.fillStyle = teamColor === 'blue' ? 'rgba(59, 130, 246, 0.8)' : 'rgba(239, 68, 68, 0.8)';
+                ctx.fill();
+                ctx.strokeStyle = teamColor === 'blue' ? '#93c5fd' : '#fca5a5';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+
+                // Dessiner l'image
+                ctx.beginPath();
+                ctx.arc(screenX, screenY, size / 2, 0, Math.PI * 2);
+                ctx.closePath();
+                ctx.clip();
+                ctx.drawImage(img, screenX - size / 2, screenY - size / 2, size, size);
+
+                ctx.restore();
+            }
+        }
+        // Modifiez la fonction drawSpellRange pour afficher tous les sorts
+        function drawSpellRange(x, y, range, color, alpha = 0.2) {
+            ctx.save();
+
+            // Convertir les coordonnées en coordonnées écran avec zoom
+            const screenX = x * camera.zoom + camera.offsetX;
+            const screenY = y * camera.zoom + camera.offsetY;
+            const screenRange = range * camera.zoom;
+
+            ctx.beginPath();
+            ctx.arc(screenX, screenY, screenRange, 0, Math.PI * 2);
+
+            // Utiliser l'opacité spécifiée
+            if (color === 'red') {
+                ctx.fillStyle = `rgba(239, 68, 68, ${alpha})`;
+                ctx.strokeStyle = `rgba(239, 68, 68, ${alpha * 2})`;
+            } else {
+                ctx.fillStyle = `rgba(59, 130, 246, ${alpha})`;
+                ctx.strokeStyle = `rgba(59, 130, 246, ${alpha * 2})`;
+            }
+
+            ctx.fill();
+            ctx.lineWidth = 1;
+            ctx.setLineDash([5, 5]);
+            ctx.stroke();
+            ctx.setLineDash([]);
+
+            ctx.restore();
+        }
+
+
+        // --- DÉMARRAGE DE L'APPLICATION ---
+        initialize();
+
+    </script>
+</body>
+
+</html>
