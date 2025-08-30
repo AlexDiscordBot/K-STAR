@@ -4,7 +4,7 @@ on:
   push:
     branches: [ main ]
   schedule:
-    - cron: "0 20 * * *"  # tous les jours à 22:00 UTC
+    - cron: "30 20 * * *"  # tous les jours à 22:00 UTC
 
 permissions:
   contents: write
