@@ -15,7 +15,7 @@ async function main() {
   // Comptage par jour (inscriptions quotidiennes)
   const [rows] = await conn.execute(`
     SELECT DATE(ua_date_join) AS d, COUNT(*) AS daily_count
-    FROM users_activites
+    FROM users_activities
     GROUP BY DATE(ua_date_join)
     ORDER BY d ASC
   `);
