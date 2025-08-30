@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Évolution des membres</title>
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial; margin: 24px; background:#0b0b0f; color:#e8e8f0; }
+    .panel { display:flex; gap:12px; align-items:end; flex-wrap:wrap; margin-bottom:16px; }
+    label { font-size:14px; opacity:.9; display:block; margin-bottom:4px; }
+    input, select, button { padding:8px 10px; border-radius:10px; border:1px solid #2a2a36; background:#151521; color:#e8e8f0; }
+    button { cursor:pointer; }
+    .card { background:#12121a; border:1px solid #232336; border-radius:18px; padding:16px; box-shadow: 0 6px 24px rgba(0,0,0,.25); }
+    .row { display:flex; gap:16px; flex-wrap:wrap; }
+    .grow { flex:1 1 420px; }
+  </style>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3"></script>
+</head>
+<body>
+  <h1>Évolution des membres</h1>
+  <div class="panel card">
+    <div>
+      <label for="start">Date de début</label>
+      <input type="date" id="start" />
+    </div>
+    <div>
+      <label for="end">Date de fin</label>
+      <input type="date" id="end" />
+    </div>
+    <div>
+      <label>Type de série</label>
+      <select id="seriesType">
+        <option value="cumulative">Cumul (total membres)</option>
+        <option value="daily">Par jour (inscriptions quotidiennes)</option>
+      </select>
+    </div>
+    <div>
+      <button id="apply">Appliquer le filtre</button>
+    </div>
+  </div>
+
+  <div class="row">
+    <div class="card grow">
+      <canvas id="chart" height="120"></canvas>
+    </div>
+  </div>
+
+  <script>
+    let RAW = [];
+    let chart;
+
+    async function load() {
+      const res = await fetch("data/members.json", { cache: "no-store" });
+      RAW = await res.json(); // [{date:"YYYY-MM-DD", daily_count:n, cumulative_count:n}, ...]
+
+      // bornes
+      const min = RAW.at(0)?.date;
+      const max = RAW.at(-1)?.date;
+      if (min) document.getElementById("start").value = min;
+      if (max) document.getElementById("end").value = max;
+
+      buildChart(filter());
+    }
+
+    function filter() {
+      const s = document.getElementById("start").value;
+      const e = document.getElementById("end").value;
+      const type = document.getElementById("seriesType").value;
+
+      const start = s ? new Date(s) : null;
+      const end = e ? new Date(e) : null;
+
+      const data = RAW.filter(d => {
+        const cur = new Date(d.date + "T00:00:00Z");
+        return (!start || cur >= start) && (!end || cur <= end);
+      });
+
+      return {
+        labels: data.map(d => d.date),
+        values: data.map(d => type === "cumulative" ? d.cumulative_count : d.daily_count),
+        label: type === "cumulative" ? "Total membres (cumul)" : "Inscriptions par jour"
+      };
+    }
+
+    function buildChart({ labels, values, label }) {
+      const ctx = document.getElementById("chart").getContext("2d");
+      if (chart) chart.destroy();
+      chart = new Chart(ctx, {
+        type: "line",
+        data: {
+          labels,
+          datasets: [{
+            label,
+            data: values,
+            fill: true,
+          }]
+        },
+        options: {
+          responsive: true,
+          interaction: { mode: "index", intersect: false },
+          plugins: {
+            legend: { labels: { color: "#e8e8f0" } },
+            tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}: ${ctx.formattedValue}` } }
+          },
+          scales: {
+            x: { type: "time", time: { unit: "day" }, ticks: { color:"#bfc3d9" }, grid: { color:"rgba(255,255,255,.07)"} },
+            y: { beginAtZero: true, ticks: { color:"#bfc3d9" }, grid: { color:"rgba(255,255,255,.07)"} }
+          }
+        }
+      });
+    }
+
+    document.getElementById("apply").addEventListener("click", () => buildChart(filter()));
+    load();
+  </script>
+</body>
+</html>
