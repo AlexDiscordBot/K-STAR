@@ -51,7 +51,7 @@
     let chart;
 
     async function load() {
-      const res = await fetch("data/members.json", { cache: "no-store" });
+      const res = await fetch("/K-STAR/data/members.json", { cache: "no-store" });
       RAW = await res.json(); // [{date:"YYYY-MM-DD", daily_count:n, cumulative_count:n}, ...]
 
       // bornes
