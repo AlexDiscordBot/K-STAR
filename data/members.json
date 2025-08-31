@@ -1,0 +1,17 @@
+[
+  {
+    "date": "2025-06-15T00:00:00.000Z",
+    "daily_count": 4,
+    "cumulative_count": 4
+  },
+  {
+    "date": "2025-06-16T00:00:00.000Z",
+    "daily_count": 1,
+    "cumulative_count": 5
+  },
+  {
+    "date": "2025-06-18T00:00:00.000Z",
+    "daily_count": 1,
+    "cumulative_count": 6
+  }
+]
